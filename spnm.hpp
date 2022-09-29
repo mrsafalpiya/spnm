@@ -100,6 +100,12 @@ namespace spnm
 const size_t STEPS_MAX = 100;
 const size_t STR_MAX   = 100;
 
+/* = ERRORS = */
+
+const int err_fx_parse          = 1;
+const int err_x_input           = 2;
+const int err_condition_not_met = 3;
+
 /*
  ===============================================================================
  |                                    Enums                                    |
@@ -144,6 +150,7 @@ struct bisection_t {
 	/* === output === */
 	size_t      steps_c; /* number of steps required for the process */
 	bisection_s steps[STEPS_MAX]; /* array of all steps required */
+	std::stringstream log;        /* output log */
 };
 
 /* == 2. secant method == */
@@ -170,6 +177,7 @@ struct secant_t {
 	/* === output === */
 	size_t   steps_c; /* number of steps required for the process */
 	secant_s steps[STEPS_MAX]; /* array of all steps required */
+	std::stringstream log;     /* output log */
 };
 
 /*
@@ -209,7 +217,10 @@ bisection_init(const char *fx, const char *interval_lower,
 /*
  * Performs the bisection calculation for the given inputs in `t`.
  *
- * Returns 0 on failure.
+ * Returns 0 on success and an error code on failure. The error codes can be:
+ * - err_fx_parse: Invalid input in f(x).
+ * - err_x_input: Invalid inputs in interval.
+ * - err_condition_not_met: f(a).f(b) > 0
  */
 int
 bisection_perform(bisection_t *t);
@@ -233,7 +244,9 @@ secant_init(const char *fx, const char *initial_point1,
 /*
  * Performs the secant calculation for the given inputs in `t`.
  *
- * Returns 0 on failure.
+ * Returns 0 on success and an error code on failure. The error codes can be:
+ * - err_fx_parse: Invalid input in f(x).
+ * - err_x_input: Invalid inputs in initial point.
  */
 int
 secant_perform(secant_t *t);
@@ -260,12 +273,19 @@ strdup(const char *str);
 
 /* = GIAC = */
 
+/* Returns 0 on error. */
+int
+giac_fx_parse(const char *fx, giac::context *ct);
+
+/* Returns an empty string "" on error. */
 std::string
 giac_fx_val_string(const char *x, giac::context *ct);
 
+/* Returns NaN on error. */
 double
 giac_fx_val_double(const char *x, giac::context *ct);
 
+/* Returns '*' on error. */
 char
 giac_fx_val_sign(const char *x, giac::context *ct);
 
@@ -273,11 +293,13 @@ giac_fx_val_sign(const char *x, giac::context *ct);
 
 /* == 1. bisection == */
 
+/* Returns an empty string "" on error. */
 std::string
 bisection_get_c(const char *a, const char *b);
 
 /* == 2. secant == */
 
+/* Returns an empty string "" on error. */
 std::string
 secant_get_x_next(const char *x_prev, const char *fx_prev, const char *x_n,
                   const char *fx_n);
@@ -390,11 +412,10 @@ bisection_perform(bisection_t *t)
 	/* = INIT GIAC = */
 
 	giac::context ct;
+	giac::logptr(&(t->log), &ct);
 
-	/* construct f(x) */
-	std::string expr = "f(x) := ";
-	expr += t->fx;
-	giac::eval(giac::gen(expr, &ct), 1, &ct);
+	if (!spnm_utils::giac_fx_parse(t->fx, &ct))
+		return err_fx_parse;
 
 	/* = CHECK IF CONDITION FOR BISECTION METHOD IS MET = */
 
@@ -403,8 +424,10 @@ bisection_perform(bisection_t *t)
 
 	char fa_sign = spnm_utils::giac_fx_val_sign(t->interval_lower, &ct);
 	char fb_sign = spnm_utils::giac_fx_val_sign(t->interval_upper, &ct);
+	if (fa_sign == '*' || fb_sign == '*')
+		return err_x_input;
 	if (fa_sign == fb_sign)
-		return 0;
+		return err_condition_not_met;
 
 	/* = BISECTION PROCESS = */
 	size_t steps_c = 0;
@@ -417,9 +440,13 @@ bisection_perform(bisection_t *t)
 		SPNM_MANIP(t->process, t->process_n, b_n);
 
 		std::string c_n_string = spnm_utils::bisection_get_c(a_n, b_n);
-		char       *c_n        = spnm_utils::strdup(c_n_string.c_str());
+		if (c_n_string == "")
+			return err_x_input;
+		char *c_n = spnm_utils::strdup(c_n_string.c_str());
 		SPNM_MANIP(t->process, t->process_n, c_n);
 		char fc_sign = spnm_utils::giac_fx_val_sign(c_n, &ct);
+		if (fc_sign == '*')
+			return err_x_input;
 
 		/* filling data */
 		cur_step->n         = steps_c + 1;
@@ -448,7 +475,7 @@ bisection_perform(bisection_t *t)
 	}
 	t->steps_c = steps_c;
 
-	return 1;
+	return 0;
 }
 
 /* Free's dynamically allocated resources from the struct. */
@@ -491,11 +518,10 @@ secant_perform(secant_t *t)
 	/* = INIT GIAC = */
 
 	giac::context ct;
+	giac::logptr(&(t->log), &ct);
 
-	/* construct f(x) */
-	std::string expr = "f(x) := ";
-	expr += t->fx;
-	giac::eval(giac::gen(expr, &ct), 1, &ct);
+	if (!spnm_utils::giac_fx_parse(t->fx, &ct))
+		return err_fx_parse;
 
 	/* = FOR FIRST STEP = */
 
@@ -506,9 +532,13 @@ secant_perform(secant_t *t)
 
 	std::string fx_prev_string =
 		spnm_utils::giac_fx_val_string(x_prev, &ct);
+	if (fx_prev_string == "")
+		return err_x_input;
 	char       *fx_prev     = spnm_utils::strdup(fx_prev_string.c_str());
 	std::string fx_n_string = spnm_utils::giac_fx_val_string(x_n, &ct);
-	char       *fx_n        = spnm_utils::strdup(fx_n_string.c_str());
+	if (fx_n_string == "")
+		return err_x_input;
+	char *fx_n = spnm_utils::strdup(fx_n_string.c_str());
 	SPNM_MANIP(t->process, t->process_n, fx_prev);
 	SPNM_MANIP(t->process, t->process_n, fx_n);
 
@@ -521,11 +551,15 @@ secant_perform(secant_t *t)
 		/* arithmetic */
 		std::string x_next_string = spnm_utils::secant_get_x_next(
 			x_prev, fx_prev, x_n, fx_n);
+		if (x_next_string == "")
+			return err_x_input;
 		char *x_next = spnm_utils::strdup(x_next_string.c_str());
 		SPNM_MANIP(t->process, t->process_n, x_next);
 
 		std::string fx_next_string =
 			spnm_utils::giac_fx_val_string(x_next, &ct);
+		if (fx_next_string == "")
+			return err_x_input;
 		char *fx_next = spnm_utils::strdup(fx_next_string.c_str());
 		SPNM_MANIP(t->process, t->process_n, fx_next);
 
@@ -553,7 +587,7 @@ secant_perform(secant_t *t)
 	}
 	t->steps_c = steps_c;
 
-	return 1;
+	return 0;
 }
 
 void
@@ -600,12 +634,27 @@ strdup(const char *str)
 
 /* = GIAC = */
 
+int
+giac_fx_parse(const char *fx, giac::context *ct)
+{
+	/* construct f(x) */
+	std::string expr = "f(x) := ";
+	expr += fx;
+
+	giac::eval(giac::gen(expr, ct), 1, ct);
+	if (giac::first_error_line(ct))
+		return 0;
+	return 1;
+}
+
 std::string
 giac_fx_val_string(const char *x, giac::context *ct)
 {
 	/* creating string off the double makes it easier to deal with very
 	 * small numbers -- avoid 6e-09 case for example. */
 	double val = giac_fx_val_double(x, ct);
+	if (std::isnan(val))
+		return "";
 
 	/* get for example "4.000000" as "4" */
 	if (std::floor(val) == val)
@@ -629,9 +678,12 @@ char
 giac_fx_val_sign(const char *x, giac::context *ct)
 {
 	double val = giac_fx_val_double(x, ct);
+	if (std::isnan(val))
+		return '*';
+
 	if (val < 0)
-		return 'n';
-	return 'p';
+		return '-';
+	return '+';
 }
 
 /* = 1 - SOLUTION OF NONLINEAR EQUATIONS = */
@@ -651,6 +703,8 @@ bisection_get_c(const char *a, const char *b)
 	formula += ")) / 2)";
 
 	giac::gen c = giac::eval(giac::gen(formula, &ct), 1, &ct);
+	if (giac::first_error_line(&ct))
+		return "";
 
 	return c.print();
 }
@@ -679,6 +733,8 @@ secant_get_x_next(const char *x_prev, const char *fx_prev, const char *x_n,
 	formula += ")))";
 
 	giac::gen c = giac::eval(giac::gen(formula, &ct), 1, &ct);
+	if (giac::first_error_line(&ct))
+		return "";
 
 	return c.print();
 }

@@ -39,11 +39,6 @@
  ===============================================================================
  */
 
-/* = ERRORS = */
-
-#define ERR_INVALID_INPUT 1
-#define ERR_PROCESS       2
-
 /* = CORE = */
 
 #define PARSE_PROCESS(PROCESS_T)                                             \
@@ -140,9 +135,31 @@ perform_bisection(const char *fx, const char *interval_lower,
 	                             process_input, atoi(process_n));
 
 	/* perform the process */
-	if (!spnm::bisection_perform(&bisection_instance)) {
-		fprintf(stderr,
-		        "[ERROR] There was an error in the process. Check the inputs.\n");
+	int ret;
+	if ((ret = spnm::bisection_perform(&bisection_instance)) != 0) {
+		switch (ret) {
+		case spnm::err_fx_parse: {
+			std::cout << "[ERROR] Invalid function input."
+				  << std::endl
+				  << std::endl;
+			std::cout << bisection_instance.log.str() << std::endl;
+		} break;
+		case spnm::err_x_input: {
+			std::cout << "[ERROR] Invalid inputs on interval."
+				  << std::endl
+				  << std::endl;
+			std::cout << bisection_instance.log.str() << std::endl;
+		} break;
+		case spnm::err_condition_not_met: {
+			std::cout
+				<< "[ERROR] The two intervals don't met the conditions for bisection of f(a).f(b) < 0."
+				<< std::endl;
+		} break;
+		default:
+			std::cout << "[ERROR] Unknown error." << std::endl
+				  << std::endl;
+			std::cout << bisection_instance.log.str() << std::endl;
+		}
 		exit(EXIT_FAILURE);
 	}
 
@@ -176,9 +193,26 @@ perform_secant(const char *fx, const char *initial_point1,
 	                          process_input, atoi(process_n));
 
 	/* perform the process */
-	if (!spnm::secant_perform(&secant_instance)) {
-		fprintf(stderr,
-		        "[ERROR] There was an error in the process. Check the inputs.\n");
+	int ret;
+	if ((ret = spnm::secant_perform(&secant_instance)) != 0) {
+		switch (ret) {
+		case spnm::err_fx_parse: {
+			std::cout << "[ERROR] Invalid function input."
+				  << std::endl
+				  << std::endl;
+			std::cout << secant_instance.log.str() << std::endl;
+		} break;
+		case spnm::err_x_input: {
+			std::cout << "[ERROR] Invalid inputs on initial point."
+				  << std::endl
+				  << std::endl;
+			std::cout << secant_instance.log.str() << std::endl;
+		} break;
+		default:
+			std::cout << "[ERROR] Unknown error." << std::endl
+				  << std::endl;
+			std::cout << secant_instance.log.str() << std::endl;
+		}
 		exit(EXIT_FAILURE);
 	}
 
